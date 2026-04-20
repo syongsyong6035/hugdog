@@ -1,6 +1,7 @@
 package spring.hugme.domain.chat.controller;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -46,16 +47,18 @@ public class ChatController {
   }
 
   @PostMapping("/chat/send")
-  public CommonApiResponse<ChatResponse> LLMChatResponse(@RequestBody ChatStartRequest chatStartRequest, @AuthenticationPrincipal String userId){
-
-    ChatResponse response = chatService.LLMChatResponse(chatStartRequest, userId);
+  public CompletableFuture<CommonApiResponse<ChatResponse>> LLMChatResponse(@RequestBody ChatStartRequest chatStartRequest, @AuthenticationPrincipal String userId){
 
 
-    return CommonApiResponse.success(
-        ResponseCode.OK,
-        "정상적으로 채팅이 응답이 완료되었습니다.",
-        response
-    );
+    return chatService.LLMChatResponse(chatStartRequest, userId)
+        .thenApply(chatResponse -> {
+
+          return CommonApiResponse.success(
+              ResponseCode.OK,
+              "정상적으로 채팅 응답이 완료되었습니다.",
+              chatResponse
+          );
+        });
   }
 
 

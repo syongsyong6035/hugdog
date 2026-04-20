@@ -5,7 +5,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import spring.hugme.domain.chat.dto.ChatBotDogListResponse;
 import spring.hugme.domain.chat.dto.ChatBotResponse;
@@ -37,11 +40,13 @@ public class ChatService {
   private final ChatBotRepository chatBotRepository;
   private final ChatMessageRepository chatMessageRepository;
   private final RedisMessageService redisMessageService;
+  @Qualifier("LLMApiExecutor")
+  private final Executor executor;
 
 
 
   @Transactional
-  public ChatResponse LLMChatResponse(ChatStartRequest request, String userId) {
+  public CompletableFuture<ChatResponse> LLMChatResponse(ChatStartRequest request, String userId) {
 
     Member member = userRepository.findByUserId(userId)
         .orElseThrow(() -> new NotFoundException("해당 멤버가 존재하지 않습니다."));
@@ -62,30 +67,28 @@ public class ChatService {
       RainbowTrue = "현재 살아서 주인 옆에 있는";
     }
 
-
-    String assistantMessage = dogBot. chat(request.getChatBotId(), String.valueOf(dog.getDogId()),dog.getDogName(), member.getName(), chatBot.getDogFeature(), dog.getAge(), dog.getBreed(), RainbowTrue, request.getGender(), today,request.getUserMessage());
-
-    ChatMessageDto humanDto = new ChatMessageDto(request.getChatBotId(), SenderType.HUMAN, request.getUserMessage(), LocalDateTime.now());
-
-    ChatMessageDto machineDto = new ChatMessageDto(request.getChatBotId(), SenderType.MACHINE, assistantMessage, LocalDateTime.now());
-
-
-
-    //일단 캐싱해두기
-    redisMessageService.cacheChatMessage(request.getChatBotId(), humanDto);
-    redisMessageService.cacheChatMessage(request.getChatBotId(), machineDto);
-
-    redisMessageService.saveLastMessage(chatBot.getChatbotId(), assistantMessage, LocalDateTime.now());
-
-    return ChatResponse.builder()
-        .chatBotId(request.getChatBotId())
-        .userMessage(humanDto)
-        .assistantMessage(machineDto)
-        .build();
+    return CompletableFuture.supplyAsync(() ->{
+      return dogBot.chat(request.getChatBotId(), String.valueOf(dog.getDogId()),dog.getDogName(), member.getName(), chatBot.getDogFeature(), dog.getAge(), dog.getBreed(), RainbowTrue, request.getGender(), today,request.getUserMessage());
+    }, executor)
+        .thenApply(assistantMessage -> {
+          // AI 응답이 도착했을 때 실행
+          ChatMessageDto humanDto = new ChatMessageDto(request.getChatBotId(), SenderType.HUMAN, request.getUserMessage(), LocalDateTime.now());
+          ChatMessageDto machineDto = new ChatMessageDto(request.getChatBotId(), SenderType.MACHINE, assistantMessage, LocalDateTime.now());
 
 
+          CompletableFuture.runAsync(() -> {
+            redisMessageService.cacheChatMessage(request.getChatBotId(), humanDto);
+            redisMessageService.cacheChatMessage(request.getChatBotId(), machineDto);
+            redisMessageService.saveLastMessage(chatBot.getChatbotId(), assistantMessage, LocalDateTime.now());
+          }, executor);
 
-
+          // 4. 최종적으로 컨트롤러에 전달할 응답 객체 반환
+          return ChatResponse.builder()
+              .chatBotId(request.getChatBotId())
+              .userMessage(humanDto)
+              .assistantMessage(machineDto)
+              .build();
+        });
   }
 
   @Transactional
