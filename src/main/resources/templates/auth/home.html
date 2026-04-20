@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>User 로그인 후 화면</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="main-container" id="mainContent" style="display: none;">
+  <div class="welcome-section">
+    <p>환영합니다!</p>
+    <span class="status-badge status-active">로그인 중</span>
+  </div>
+
+  <div class="user-info">
+    <h3>📋 사용자 정보</h3>
+    <div class="info-item">
+      <strong>사용자 ID:</strong>
+      <span id="userIdDisplay">로딩 중...</span>
+    </div>
+    <div class="info-item">
+      <strong>로그인 시간:</strong>
+      <span id="loginTime"></span>
+    </div>
+  </div>
+
+  <div class="action-buttons">
+    <button class="btn btn-danger" onclick="logout()">로그아웃</button>
+  </div>
+
+  <div id="errorMessage"></div>
+</div>
+<script th:src="@{/js/auth.js}"></script>
+<script defer th:inline="javascript">
+  const DEV_DOMAIN = [[${devDomain}]];
+  let userId = null;
+
+  window.onload = async function () {
+    AuthManager.startAutoRefresh();
+    await checkAuthentication();
+  };
+
+  async function checkAuthentication() {
+    let accessToken = localStorage.getItem('accessToken');
+
+    if (!accessToken) {
+      return redirectToLogin('로그인이 필요합니다.');
+    }
+    try {
+      userId = parseJwt(accessToken).sub;
+    } catch {
+      return redirectToLogin('유효하지 않은 토큰입니다.');
+    }
+    accessToken = localStorage.getItem('accessToken');
+    showMainContent(accessToken);
+  }
+
+  async function logout() {
+    if (!confirm('로그아웃 하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${DEV_DOMAIN}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include'
+      });
+      const result = await res.json();
+      if (res.ok) {
+        localStorage.clear();
+        alert('로그아웃 완료');
+        window.location.href = '/view/login';
+      } else {
+        showError(`로그아웃 실패: ${result.message || '알 수 없는 오류'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      showError('로그아웃 오류: ' + err.message);
+    }
+  }
+
+  function showMainContent(accessToken) {
+    document.getElementById('mainContent').style.display = 'block';
+    document.getElementById('errorMessage').style.display = 'none';
+    document.getElementById('loginTime').textContent = new Date().toLocaleString('ko-KR');
+    document.getElementById('userIdDisplay').textContent = userId;
+  }
+
+  function parseJwt(token) {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(decodeURIComponent(atob(base64).split('').map(c =>
+        '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join('')));
+  }
+
+  function showError(msg) {
+    const div = document.getElementById('errorMessage');
+    div.textContent = msg;
+    div.style.display = 'block';
+    setTimeout(() => div.style.display = 'none', 5000);
+  }
+
+  function redirectToLogin(msg) {
+    localStorage.clear();
+    alert(msg);
+    window.location.href = '/view/login';
+  }
+</script>
+</body>
+</html>

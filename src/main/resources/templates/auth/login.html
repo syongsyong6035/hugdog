@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>로그인</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+
+</head>
+<body>
+<h2>로그인</h2>
+
+<!-- 로그인 폼 -->
+<form id="loginForm">
+  <input id="userId" placeholder="아이디" required type="text"/>
+  <input id="password" placeholder="비밀번호" required type="password"/>
+  <button type="submit">로그인</button>
+  <a th:href="@{/view/signup}">회원가입</a>
+</form>
+
+<!-- 로그인 오류 메시지 -->
+<div id="loginError" style="color:red;"></div>
+
+<script th:inline="javascript">
+  const DEV_DOMAIN = [[${devDomain}]]; // 개발 서버 도메인
+
+  // 로그인 폼 제출 이벤트
+  document.getElementById('loginForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+
+    const userId = document.getElementById('userId').value.trim();
+    const password = document.getElementById('password').value.trim();
+
+    if (!userId || !password) {
+      document.getElementById('loginError').innerText = '아이디와 비밀번호를 입력해주세요.';
+      return;
+    }
+
+    try {
+      // 로그인 요청
+      const loginRes = await fetch(`${DEV_DOMAIN}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({userId, password})
+      });
+      const loginData = await loginRes.json();
+
+      if (loginData.code === "OK") {
+        const {accessToken} = loginData.data;
+        localStorage.setItem('accessToken', accessToken);
+        console.log('로그인 성공!');
+          window.location.href = '/view/home';
+      } else {
+        document.getElementById('loginError').innerText = `로그인 실패: ${loginData.message}`;
+      }
+    } catch (err) {
+      console.error(err);
+      document.getElementById('loginError').innerText = '서버와 연결할 수 없습니다.';
+    }
+  });
+</script>
+</body>
+</html>
